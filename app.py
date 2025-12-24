@@ -4,9 +4,9 @@ import pandas as pd
 
 uploaded = st.file_uploader("Upload a CSV", type="csv")
 
-if uploaded:
-    df = pd.read_csv(uploaded)
-    st.dataframe(df)
+assert uploaded is not None
+df = pd.read_csv(uploaded)
+st.dataframe(df)
 
 
 st.title("CERT Rank Buckets Across Counties")
