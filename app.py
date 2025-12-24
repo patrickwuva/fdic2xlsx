@@ -4,12 +4,18 @@ import pandas as pd
 
 uploaded = st.file_uploader("Upload a CSV", type="csv")
 
-df = pd.read_csv(uploaded)
-st.dataframe(df)
-
 
 st.title("CERT Rank Buckets Across Counties")
 
+uploaded = st.file_uploader("Upload a CSV", type=["csv"])
+
+if uploaded is None:
+    st.info("Please upload a CSV to continue.")
+    st.stop()
+
+# ✅ Now it's safe
+df = pd.read_csv(uploaded)
+st.dataframe(df, use_container_width=True)
 
 df["DEPSUMBR"] = pd.to_numeric(df["DEPSUMBR"], errors="coerce").fillna(0)
 
