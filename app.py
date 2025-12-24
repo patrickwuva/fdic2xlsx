@@ -2,8 +2,6 @@ import streamlit as st
 import pandas as pd
 
 
-uploaded = st.file_uploader("Upload a CSV", type="csv")
-
 
 st.title("CERT Rank Buckets Across Counties")
 
