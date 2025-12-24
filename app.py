@@ -171,11 +171,8 @@ def bank_state_market_share_table(cc: pd.DataFrame, rssdhcr: int | str) -> pd.Da
 
     return out
 
-
-
-
 def bank_county_rank_buckets_raw(my: pd.DataFrame, bank_total_deps: float) -> pd.DataFrame:
-    """Return bucket table with numeric pct for charting."""
+    """Return bucket table with numeric pct for charting, plus a TOTAL/AVG row."""
     def rank_bucket(r):
         r = int(r)
         return str(r) if r <= 9 else "10+"
@@ -191,23 +188,68 @@ def bank_county_rank_buckets_raw(my: pd.DataFrame, bank_total_deps: float) -> pd
            )
     )
 
+    # Percent of bank total in each bucket
     bucket["pct_of_bank_total_in_bucket"] = (bucket["bank_deps"] / bank_total_deps).fillna(0)
 
+    # Order 1..9 then 10+
     order = [str(i) for i in range(1, 10)] + ["10+"]
     bucket["rank_bucket"] = pd.Categorical(bucket["rank_bucket"], categories=order, ordered=True)
     bucket = bucket.sort_values("rank_bucket")
 
+    # -----------------------
+    # TOTAL / AVG row
+    # -----------------------
+    # map bucket -> numeric rank (10+ => 10)
+    bucket_numeric = bucket.copy()
+    bucket_numeric["rank_bucket_num"] = bucket_numeric["rank_bucket"].astype(str).apply(
+        lambda x: 10 if x == "10+" else int(x)
+    )
+
+    # weighted average rank using deposit share weights
+    weight = bucket_numeric["pct_of_bank_total_in_bucket"].fillna(0)
+    avg_rank_bucket = float((bucket_numeric["rank_bucket_num"] * weight).sum() / max(weight.sum(), 1e-12))
+
+    bank_total = float(bucket["bank_deps"].sum())
+    avg_dep_share_per_bucket = float(bucket["pct_of_bank_total_in_bucket"].mean()) if len(bucket) else 0.0
+    pct_total = float(bucket["pct_of_bank_total_in_bucket"].sum())
+
+    totals_row = {
+        "rank_bucket": "TOTAL / AVG",
+        "counties": int(bucket["counties"].sum()),
+        "bank_deps": bank_total,
+        "pct_of_bank_total_in_bucket": pct_total,   # should be 1.0
+        "avg_rank_bucket": avg_rank_bucket,
+        "avg_dep_share_per_bucket": avg_dep_share_per_bucket,
+    }
+
+    bucket = pd.concat([bucket, pd.DataFrame([totals_row])], ignore_index=True)
     return bucket
 
 
 def bank_county_rank_buckets_display(bucket_raw: pd.DataFrame) -> pd.DataFrame:
-    """Format the bucket table for display."""
+    """Format the bucket table for display (including TOTAL/AVG row)."""
     out = bucket_raw.copy()
-    out["bank_deps"] = out["bank_deps"].map(fmt_int)
-    out["pct_of_bank_total_in_bucket"] = out["pct_of_bank_total_in_bucket"].map(fmt_pct)
+
+    # Format money
+    out["bank_deps"] = out["bank_deps"].apply(lambda x: "" if pd.isna(x) else fmt_int(float(x)))
+
+    # Format pct (note: TOTAL row should be 100%)
+    out["pct_of_bank_total_in_bucket"] = out["pct_of_bank_total_in_bucket"].apply(
+        lambda x: "" if pd.isna(x) else fmt_pct(float(x))
+    )
+
+    # Optional columns: only totals row has these
+    if "avg_rank_bucket" in out.columns:
+        out["avg_rank_bucket"] = out["avg_rank_bucket"].apply(
+            lambda x: "" if pd.isna(x) else f"{float(x):.2f}"
+        )
+
+    if "avg_dep_share_per_bucket" in out.columns:
+        out["avg_dep_share_per_bucket"] = out["avg_dep_share_per_bucket"].apply(
+            lambda x: "" if pd.isna(x) else fmt_pct(float(x))
+        )
+
     return out
-
-
 
 # ---------------------------
 # App
@@ -271,6 +313,12 @@ bucket_raw = bank_county_rank_buckets_raw(my, bank_total_deps)
 st.dataframe(bank_county_rank_buckets_display(bucket_raw), use_container_width=True)
 
 # Bar chart (x=bucket, y=%)
+bucket_raw = bank_county_rank_buckets_raw(my, bank_total_deps)
+
+chart_bucket = bucket_raw[bucket_raw["rank_bucket"] != "TOTAL / AVG"].copy()
+
+chart_df = chart_bucket.set_index("rank_bucket")[["pct_of_bank_total_in_bucket"]]
+st.bar_chart(chart_df)
 st.subheader("Bucket distribution chart (% of bank total deposits)")
 chart_df = bucket_raw.set_index("rank_bucket")[["pct_of_bank_total_in_bucket"]]
 st.bar_chart(chart_df)
