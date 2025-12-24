@@ -5,9 +5,69 @@ import pandas as pd
 # ---------------------------
 # Helpers
 # ---------------------------
+import io
+import csv
+import pandas as pd
+import streamlit as st
+
 @st.cache_data
 def load_csv(uploaded_file) -> pd.DataFrame:
-    return pd.read_csv(uploaded_file, encoding_errors="ignore")
+    # Read bytes once (Streamlit UploadedFile is file-like; caching likes deterministic inputs)
+    raw = uploaded_file.getvalue()
+
+    # Try decode with utf-8-sig first (handles BOM), then fallback
+    text = None
+    for enc in ("utf-8-sig", "utf-8", "latin-1"):
+        try:
+            text = raw.decode(enc, errors="ignore")
+            break
+        except Exception:
+            pass
+    if text is None:
+        text = raw.decode("utf-8", errors="ignore")
+
+    # Sniff delimiter from a sample
+    sample = text[:200_000]
+    delimiter = ","
+    try:
+        dialect = csv.Sniffer().sniff(sample, delimiters=[",", "\t", "|", ";"])
+        delimiter = dialect.delimiter
+    except Exception:
+        # keep default ","
+        pass
+
+    # Parse with tolerant settings
+    buf = io.StringIO(text)
+
+    try:
+        df = pd.read_csv(
+            buf,
+            sep=delimiter,
+            engine="python",          # more tolerant than C engine
+            on_bad_lines="skip",      # skip malformed lines instead of crashing
+        )
+        return df
+    except Exception as e:
+        # Try a last-resort parse (no quoting assumptions)
+        buf2 = io.StringIO(text)
+        try:
+            df = pd.read_csv(
+                buf2,
+                sep=delimiter,
+                engine="python",
+                on_bad_lines="skip",
+                quoting=csv.QUOTE_NONE,
+            )
+            return df
+        except Exception:
+            # Surface a helpful message in the app
+            st.error(
+                "Could not parse this file as a CSV. "
+                "It may have inconsistent columns, broken quoting, or the wrong delimiter."
+            )
+            st.exception(e)
+            raise
+
 
 
 def fmt_int(x) -> str:
