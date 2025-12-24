@@ -4,7 +4,6 @@ import pandas as pd
 
 uploaded = st.file_uploader("Upload a CSV", type="csv")
 
-assert uploaded is not None
 df = pd.read_csv(uploaded)
 st.dataframe(df)
 
